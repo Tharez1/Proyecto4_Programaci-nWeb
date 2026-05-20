@@ -20,9 +20,12 @@ document.addEventListener("DOMContentLoaded", () => {
             })
         });
 
-        const presigned = await response.json();
+        const data = await response.json();
+        const fileName = data.file_name;
+        const presigned = data.presigned;
 
         console.log(presigned);
+        console.log(fileName);
 
         // 2. construir multipart/form-data
         const formData = new FormData();
@@ -43,11 +46,38 @@ document.addEventListener("DOMContentLoaded", () => {
             body: formData
         });
 
-        if (uploadResponse.ok) {
-            console.log("Archivo subido correctamente");
-        } else {
-            console.error("Error upload");
-        }
-    });
+    if (uploadResponse.ok) {
+        console.log("Archivo subido correctamente");
 
+        const source = new EventSource(`/events/${fileName}`);
+
+        source.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            console.log("SSE:", data);
+
+            if (data.content === fileName) {
+                console.log("Imagen procesada:", data.content);
+
+                document.getElementById("status").textContent =
+                    `Imagen procesada: ${data.content}`;
+
+                source.close();
+            } else {
+                document.getElementById("status").textContent =
+                    "Procesando imagen...";
+            }
+        };
+
+        source.onerror = () => {
+            console.error("Error SSE");
+            document.getElementById("status").textContent =
+                "Esperando respuesta del servidor...";
+        };
+
+    } else {
+        console.error("Error upload");
+    };
+
+   });
 });
