@@ -5,9 +5,50 @@
 </head>
 <body>
 
-<h1>FastAPI + JavaScript</h1>
+<h1>Subir imagen JPG</h1>
 
-<button id="btn">Obtener mensaje</button>
+<hr>
+
+<form id="uploadForm">
+
+    <input
+        type="file"
+        id="imageInput"
+        accept=".jpg,.jpeg"
+    >
+
+    <br><br>
+
+    <label>
+        Tipo de procesamiento:
+    </label>
+
+    <select id="processType">
+
+        <option value="small">
+            Small
+        </option>
+
+        <option value="mini">
+            Mini
+        </option>
+
+        <option value="both">
+            Ambas
+        </option>
+
+    </select>
+
+    <br><br>
+
+    <button
+        type="button"
+        id="uploadBtn"
+    >
+        Subir imagen
+    </button>
+
+</form>
 
 <p id="output"></p>
 
