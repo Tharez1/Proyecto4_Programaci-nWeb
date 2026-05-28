@@ -1,58 +1,491 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>FastAPI Demo</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Procesador de imágenes</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e0f;
+      --surface: #18181b;
+      --border: #2a2a2f;
+      --border-hover: #44444d;
+      --text: #f0f0f2;
+      --muted: #6b6b78;
+      --accent: #e8ff47;
+      --accent-dim: rgba(232,255,71,0.12);
+      --accent-text: #0e0e0f;
+      --danger: #ff5f57;
+      --success: #30d158;
+      --radius: 10px;
+      --mono: 'DM Mono', monospace;
+      --sans: 'DM Sans', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-weight: 300;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 540px;
+    }
+
+    /* Header */
+    .header {
+      margin-bottom: 36px;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 500;
+      letter-spacing: -0.3px;
+      color: var(--text);
+    }
+    .header p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+
+    /* Drop zone */
+    .dropzone {
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .dropzone:hover, .dropzone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .dropzone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .dropzone-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+    .dropzone-label {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .dropzone-label span {
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .dropzone-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+      font-family: var(--mono);
+    }
+
+    /* Preview */
+    .preview-wrap {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-top: 12px;
+    }
+    .preview-wrap.visible { display: flex; }
+    .preview-thumb {
+      width: 52px;
+      height: 52px;
+      object-fit: cover;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .preview-info { flex: 1; min-width: 0; }
+    .preview-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .preview-size {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 2px;
+    }
+    .preview-clear {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 4px;
+      transition: color 0.15s;
+    }
+    .preview-clear:hover { color: var(--danger); }
+
+    /* Section label */
+    .section-label {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 28px 0 10px;
+    }
+
+    /* Opciones tipo chip */
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+      user-select: none;
+      color: var(--muted);
+      background: var(--surface);
+    }
+    .chip:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+    }
+    .chip.active {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+    .chip-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.5;
+      transition: opacity 0.15s;
+    }
+    .chip.active .chip-dot { opacity: 1; }
+
+    /* Sub-opciones (filtros / formatos) */
+    .sub-group {
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      animation: fadeIn 0.15s ease;
+    }
+    .sub-group.visible { display: flex; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .sub-chip {
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      font-size: 12px;
+      font-family: var(--mono);
+      cursor: pointer;
+      color: var(--muted);
+      background: var(--bg);
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .sub-chip:hover { border-color: var(--border-hover); color: var(--text); }
+    .sub-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    /* Botón subir */
+    .btn-upload {
+      width: 100%;
+      margin-top: 28px;
+      padding: 14px;
+      background: var(--accent);
+      color: var(--accent-text);
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 500;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      letter-spacing: 0.01em;
+    }
+    .btn-upload:hover:not(:disabled) { opacity: 0.9; }
+    .btn-upload:active:not(:disabled) { transform: scale(0.99); }
+    .btn-upload:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* Estado / output */
+    .status {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-family: var(--mono);
+      display: none;
+    }
+    .status.visible { display: block; }
+    .status.loading {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .status.success {
+      background: rgba(48,209,88,0.08);
+      border: 1px solid rgba(48,209,88,0.3);
+      color: var(--success);
+    }
+    .status.error {
+      background: rgba(255,95,87,0.08);
+      border: 1px solid rgba(255,95,87,0.3);
+      color: var(--danger);
+    }
+
+    /* Spinner inline */
+    .spinner {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
+<div class="container">
 
-<h1>Subir imagen JPG</h1>
+  <div class="header">
+    <h1>Procesador de imágenes</h1>
+    <p>// sube · transforma · almacena en S3</p>
+  </div>
 
-<hr>
+  <!-- Drop zone -->
+  <div class="dropzone" id="dropzone">
+    <input type="file" id="imageInput" accept=".jpg,.jpeg,.png,.webp">
+    <div class="dropzone-icon">⬡</div>
+    <div class="dropzone-label">Arrastra tu imagen aquí o <span>selecciona un archivo</span></div>
+    <div class="dropzone-sub">jpg · jpeg · png · webp</div>
+  </div>
 
-<form id="uploadForm">
+  <!-- Preview -->
+  <div class="preview-wrap" id="previewWrap">
+    <img class="preview-thumb" id="previewThumb" src="" alt="preview">
+    <div class="preview-info">
+      <div class="preview-name" id="previewName"></div>
+      <div class="preview-size" id="previewSize"></div>
+    </div>
+    <button class="preview-clear" id="clearBtn" title="Quitar">✕</button>
+  </div>
 
-    <input
-        type="file"
-        id="imageInput"
-        accept=".jpg,.jpeg"
-    >
+  <!-- Tipo de procesamiento -->
+  <div class="section-label">Tipo de procesamiento</div>
+  <div class="chip-group" id="mainGroup">
+    <div class="chip active" data-value="small">
+      <span class="chip-dot"></span> Small <span style="font-size:11px;font-family:var(--mono);opacity:.6">50%</span>
+    </div>
+    <div class="chip" data-value="mini">
+      <span class="chip-dot"></span> Mini <span style="font-size:11px;font-family:var(--mono);opacity:.6">20%</span>
+    </div>
+    <div class="chip" data-value="both">
+      <span class="chip-dot"></span> Ambas
+    </div>
+    <div class="chip" data-value="filter">
+      <span class="chip-dot"></span> Filtro
+    </div>
+    <div class="chip" data-value="convert">
+      <span class="chip-dot"></span> Convertir
+    </div>
+  </div>
 
-    <br><br>
+  <!-- Sub-opciones filtros -->
+  <div class="sub-group" id="filterGroup">
+    <div class="sub-chip active" data-value="grayscale">grayscale</div>
+    <div class="sub-chip" data-value="sepia">sepia</div>
+    <div class="sub-chip" data-value="blur">blur</div>
+    <div class="sub-chip" data-value="sharpen">sharpen</div>
+    <div class="sub-chip" data-value="contour">contour</div>
+    <div class="sub-chip" data-value="emboss">emboss</div>
+    <div class="sub-chip" data-value="flip_h">flip horizontal</div>
+    <div class="sub-chip" data-value="flip_v">flip vertical</div>
+  </div>
 
-    <label>
-        Tipo de procesamiento:
-    </label>
+  <!-- Sub-opciones formato -->
+  <div class="sub-group" id="convertGroup">
+    <div class="sub-chip active" data-value="PNG">PNG</div>
+    <div class="sub-chip" data-value="WEBP">WEBP</div>
+    <div class="sub-chip" data-value="JPEG">JPEG</div>
+    <div class="sub-chip" data-value="BMP">BMP</div>
+    <div class="sub-chip" data-value="GIF">GIF</div>
+  </div>
 
-    <select id="processType">
+  <button class="btn-upload" id="uploadBtn" disabled>Subir imagen</button>
 
-        <option value="small">
-            Small
-        </option>
+  <div class="status" id="status"></div>
 
-        <option value="mini">
-            Mini
-        </option>
+</div>
 
-        <option value="both">
-            Ambas
-        </option>
+<script>
+  // ── Estado ──────────────────────────────────────────
+  let selectedFile = null;
+  let mainType = 'small';
+  let subFilter = 'grayscale';
+  let subFormat = 'PNG';
 
-    </select>
+  // ── Drop zone ───────────────────────────────────────
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('imageInput');
 
-    <br><br>
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
+  });
 
-    <button
-        type="button"
-        id="uploadBtn"
-    >
-        Subir imagen
-    </button>
+  function setFile(f) {
+    selectedFile = f;
+    document.getElementById('previewName').textContent = f.name;
+    document.getElementById('previewSize').textContent = formatBytes(f.size);
+    const reader = new FileReader();
+    reader.onload = e => document.getElementById('previewThumb').src = e.target.result;
+    reader.readAsDataURL(f);
+    document.getElementById('previewWrap').classList.add('visible');
+    document.getElementById('uploadBtn').disabled = false;
+    clearStatus();
+  }
 
-</form>
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    selectedFile = null;
+    fileInput.value = '';
+    document.getElementById('previewWrap').classList.remove('visible');
+    document.getElementById('uploadBtn').disabled = true;
+    clearStatus();
+  });
 
-<p id="output"></p>
+  function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b / (1024 * 1024)).toFixed(2) + ' MB';
+  }
 
-<script src="/static/app.js"></script>
+  // ── Chips principales ───────────────────────────────
+  document.getElementById('mainGroup').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.querySelectorAll('#mainGroup .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    mainType = chip.dataset.value;
 
+    document.getElementById('filterGroup').classList.toggle('visible', mainType === 'filter');
+    document.getElementById('convertGroup').classList.toggle('visible', mainType === 'convert');
+  });
+
+  // ── Sub-chips filtros ───────────────────────────────
+  document.getElementById('filterGroup').addEventListener('click', e => {
+    const chip = e.target.closest('.sub-chip');
+    if (!chip) return;
+    document.querySelectorAll('#filterGroup .sub-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    subFilter = chip.dataset.value;
+  });
+
+  // ── Sub-chips formato ───────────────────────────────
+  document.getElementById('convertGroup').addEventListener('click', e => {
+    const chip = e.target.closest('.sub-chip');
+    if (!chip) return;
+    document.querySelectorAll('#convertGroup .sub-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    subFormat = chip.dataset.value;
+  });
+
+  // ── Calcular process_type final ─────────────────────
+  function getProcessType() {
+    if (mainType === 'filter')  return `filter:${subFilter}`;
+    if (mainType === 'convert') return `convert:${subFormat}`;
+    return mainType;
+  }
+
+  // ── Upload ──────────────────────────────────────────
+  document.getElementById('uploadBtn').addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    const btn = document.getElementById('uploadBtn');
+    btn.disabled = true;
+    setStatus('loading', '<span class="spinner"></span>Subiendo imagen...');
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('process_type', getProcessType());
+
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (data.error) {
+        setStatus('error', '✕ ' + data.error);
+      } else {
+        setStatus('success', '✓ ' + data.message + `  ·  [${getProcessType()}]`);
+      }
+    } catch (err) {
+      setStatus('error', '✕ Error de red: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function setStatus(type, html) {
+    const el = document.getElementById('status');
+    el.className = `status visible ${type}`;
+    el.innerHTML = html;
+  }
+  function clearStatus() {
+    const el = document.getElementById('status');
+    el.className = 'status';
+    el.innerHTML = '';
+  }
+</script>
 </body>
 </html>

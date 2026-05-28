@@ -1,4 +1,5 @@
 services:
+
   redis:
     image: redis:alpine
     container_name: redis
@@ -10,12 +11,29 @@ services:
       timeout: 3s
       retries: 5
 
-  worker:
-    build: ./worker
+  fast:
+    build: ./fast
+    ports:
+      - "8000:8000"
     environment:
-      REDIS_HOST: redis
+      - REDIS_HOST=redis
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - $HOME/.aws:/root/.aws:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./worker-sqs
     deploy:
-      replicas: 2
+      replicas: 3
+    environment:
+      - REDIS_HOST=redis
+      - SQS_URL=https://sqs.us-east-1.amazonaws.com/467468288419/MyQueue
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - $HOME/.aws:/root/.aws:ro
     depends_on:
       redis:
         condition: service_healthy

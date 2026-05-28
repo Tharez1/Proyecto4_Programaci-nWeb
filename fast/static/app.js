@@ -1,48 +1,62 @@
 document.addEventListener('DOMContentLoaded', function () {
 
-    const uploadBtn = document.getElementById("uploadBtn");
-    const imageInput = document.getElementById("imageInput");
-    const processType = document.getElementById("processType");
-    const output = document.getElementById("output");
+    const uploadBtn = document.getElementById('uploadBtn');
 
-    uploadBtn.onclick = async () => {
+    uploadBtn.addEventListener('click', async () => {
+        if (!selectedFile) return;
 
-        const file = imageInput.files[0];
-
-        if (!file) {
-            output.innerText = "Selecciona una imagen";
-            return;
-        }
+        const btn = document.getElementById('uploadBtn');
+        btn.disabled = true;
+        setStatus('loading', '<span class="spinner"></span>Subiendo imagen...');
 
         const formData = new FormData();
-
-        // ARCHIVO
-        formData.append("file", file);
-
-        // TIPO DE PROCESAMIENTO
-        formData.append(
-            "process_type",
-            processType.value
-        );
+        formData.append('file', selectedFile);
+        formData.append('process_type', getProcessType());
 
         try {
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
 
-            const response = await fetch("/upload", {
-                method: "POST",
-                body: formData
-            });
+            if (data.error) {
+                setStatus('error', '✕ ' + data.error);
+                btn.disabled = false;
+                return;
+            }
 
-            const data = await response.json();
+            // CONECTAR SSE
+            const filename = data.filename;
+            setStatus('loading', '<span class="spinner"></span>En cola...');
 
-            output.innerText =
-                data.message || data.error;
+            const es = new EventSource(`/status/stream/${filename}`);
 
-        } catch (error) {
+            es.onmessage = (e) => {
+                const status = e.data;
 
-            output.innerText =
-                "Error al subir imagen";
+                if (status === 'pendiente') {
+                    setStatus('loading', '<span class="spinner"></span>Pendiente...');
+                } else if (status === 'processing') {
+                    setStatus('loading', '<span class="spinner"></span>Procesando imagen...');
+                } else if (status === 'completed') {
+                    setStatus('success', '✓ Completado · ' + filename);
+                    es.close();
+                    btn.disabled = false;
+                } else if (status === 'error') {
+                    setStatus('error', '✕ Error al procesar · ' + filename);
+                    es.close();
+                    btn.disabled = false;
+                }
+            };
 
-            console.error(error);
+            es.onerror = () => {
+                setStatus('error', '✕ Error de conexión SSE');
+                es.close();
+                btn.disabled = false;
+            };
+
+        } catch (err) {
+            setStatus('error', '✕ Error de red: ' + err.message);
+            btn.disabled = false;
         }
-    };
+    });
+
 });

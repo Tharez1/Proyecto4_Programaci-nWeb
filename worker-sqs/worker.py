@@ -240,9 +240,6 @@ while run:
                     'small.jpg',
                     bucket_name,
                     f'small/{filename}',
-                    extra_args={
-                        'ACL': 'public-read'
-                    }
                 )
 
                 print('Imagen redimensionada')
@@ -259,20 +256,18 @@ while run:
                     'mini.jpg',
                     bucket_name,
                     f'mini/{filename}',
-                    extra_args={
-                        'ACL': 'public-read'
-                    }
                 )
 
                 print('Miniatura generada')
-
+            
             # BOTH
             elif process_type == "both":
 
                 # SMALL
                 s3image.resize_image(
                     'image.jpg',
-                    'small.jpg'
+                    'small.jpg',
+                    scale=0.5
                 )
 
                 s3image.upload_file(
@@ -284,7 +279,8 @@ while run:
                 # MINI
                 s3image.resize_image(
                     'image.jpg',
-                    'mini.jpg'
+                    'mini.jpg',
+                    scale=0.2
                 )
 
                 s3image.upload_file(
@@ -294,6 +290,31 @@ while run:
              )
 
                 print('small y mini generadas')
+            # FILTER
+            elif process_type.startswith("filter:"):
+                filter_name = process_type.split(":", 1)[1]   # ej: "filter:sepia"
+                out_file = f'filtered_{filename}'
+
+                s3image.apply_filter('image.jpg', out_file, filter_name)
+                s3image.upload_file(
+                    out_file, bucket_name,
+                    f'filtered/{filename}',
+                )
+                print(f'Filtro {filter_name} aplicado')
+
+            # CONVERT
+            elif process_type.startswith("convert:"):
+                fmt = process_type.split(":", 1)[1].upper()   # ej: "convert:PNG"
+                new_filename = os.path.splitext(filename)[0] + '.' + fmt.lower()
+                out_file = f'converted_{new_filename}'
+
+                s3image.convert_image('image.jpg', out_file, fmt)
+                s3image.upload_file(
+                out_file, bucket_name,
+                f'converted/{new_filename}',
+            )
+                print(f'Convertido a {fmt}')
+
 
             print('imagen almacenada')
 
@@ -305,10 +326,9 @@ while run:
 
             print('mensaje eliminado')
 
-            # ESTADO FINAL
-            ok = r.set(filename, "completed")
-
-            assert ok
+            
+            r.set(filename, "completed")
+            print(f"Estado final: completed → {filename}", flush=True)
 
         except Exception as e:
 
