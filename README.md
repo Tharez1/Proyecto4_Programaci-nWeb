@@ -1,173 +1,181 @@
-# Instrucciones de prueba local
+# Equipo 
+ Lavenant Baldenebro Gilberto 
+ Landon Donovan Enciso 
+ Tristán Montes de Oca
+ 
+ 
+# Procesador de Imágenes Distribuido
+
+Aplicación web para procesar imágenes de forma distribuida usando workers en Docker, AWS SQS como cola de mensajes y Redis para el estado de las tareas.
+
+## Arquitectura
+
+```
+Usuario
+  │
+  ▼
+Frontend (HTML/CSS/JS)
+  │  sube imagen
+  ▼
+FastAPI (Backend)
+  │  guarda en S3 (img/)
+  │  registra estado en Redis → "pendiente"
+  │  SSE stream al frontend
+  ▼
+AWS S3 (tristan-web)
+  │  evento ObjectCreated
+  ▼
+AWS SQS (MyQueue)
+  │  mensaje en cola
+  ▼
+Workers x3 (Docker)
+  │  descarga imagen de S3
+  │  procesa (resize / filtro / conversión)
+  │  sube resultado a S3
+  │  actualiza Redis → "completed"
+  ▼
+Redis
+  └── estado de cada tarea (pendiente / processing / completed / error)
+```
+
+## Tecnologías
+
+| Capa | Tecnología |
+|---|---|
+| Frontend | HTML, CSS, JavaScript |
+| Backend | FastAPI + Uvicorn |
+| Cola de mensajes | AWS SQS |
+| Almacenamiento | AWS S3 |
+| Estado de tareas | Redis |
+| Contenedores | Docker + Docker Compose |
 
 ## Estructura del proyecto
 
 ```
-.
-├── worker/
+worker-redis-image/
+├── docker-compose.yml
+├── fast/                  # Backend FastAPI
 │   ├── Dockerfile
+│   ├── app.py
 │   ├── requirements.txt
-│   └── worker.py
-├── images/
-│   ├── a.y.-jackson_wilderness-deese-bay.jpg
-│   ├── caravaggio_boy-with-a-basket-of-fruit.jpg
-│   └── ... (98 imágenes más)
-├── enqueue_images.py
-├── s3image.py
-└── instrucciones.md
+│   ├── static/
+│   │   └── app.js
+│   └── templates/
+│       └── index.html
+└── worker-sqs/            # Worker de procesamiento
+    ├── Dockerfile
+    ├── requirements.txt
+    ├── s3image.py
+    └── worker.py
 ```
 
----
+## Procesamiento disponible
 
-# Parte 1: Docker manual (entender los pasos)
+| `process_type` | Descripción | Carpeta destino en S3 |
+|---|---|---|
+| `small` | Redimensiona al 50% | `small/` |
+| `mini` | Redimensiona al 20% | `mini/` |
+| `both` | Genera small y mini | `small/` y `mini/` |
+| `filter:grayscale` | Escala de grises | `filtered/` |
+| `filter:sepia` | Tono sepia | `filtered/` |
+| `filter:blur` | Desenfoque gaussiano | `filtered/` |
+| `filter:sharpen` | Nitidez | `filtered/` |
+| `filter:contour` | Contorno | `filtered/` |
+| `filter:emboss` | Relieve | `filtered/` |
+| `filter:flip_h` | Espejo horizontal | `filtered/` |
+| `filter:flip_v` | Espejo vertical | `filtered/` |
+| `convert:PNG` | Convierte a PNG | `converted/` |
+| `convert:WEBP` | Convierte a WEBP | `converted/` |
+| `convert:JPEG` | Convierte a JPEG | `converted/` |
+| `convert:GIF` | Convierte a GIF | `converted/` |
+| `convert:BMP` | Convierte a BMP | `converted/` |
 
-## 1. Construir la imagen del worker
+## Requisitos
 
+- Docker y Docker Compose
+- AWS EC2 con IAM Role que tenga permisos de S3 y SQS
+- Bucket S3 con notificaciones configuradas a SQS para el prefijo `img/`
+
+## Configuración AWS
+
+### S3 — Event Notification
+- **Bucket:** `tristan-web`
+- **Prefix:** `img/`
+- **Event type:** `s3:ObjectCreated:*`
+- **Destination:** SQS → `MyQueue`
+
+### SQS — Access Policy
+```json
+{
+  "Effect": "Allow",
+  "Principal": { "Service": "s3.amazonaws.com" },
+  "Action": "sqs:SendMessage",
+  "Resource": "arn:aws:sqs:us-east-1:ACCOUNT_ID:MyQueue",
+  "Condition": {
+    "ArnLike": {
+      "aws:SourceArn": "arn:aws:s3:::tristan-web"
+    }
+  }
+}
+```
+
+## Instalación y uso
+
+### 1. Clonar el repositorio
 ```bash
-docker build -t my-worker worker/
+git clone https://github.com/tu-usuario/worker-redis-image.git
+cd worker-redis-image
 ```
 
-## 2. Lanzar Redis
-
+### 2. Levantar los contenedores
 ```bash
-docker run -d --name redis -p 6379:6379 redis:alpine
+docker compose up --build -d
 ```
 
-## 3. Lanzar uno o varios workers
-
+### 3. Verificar que todo esté corriendo
 ```bash
-# Worker 1
-## En caso de utilizar Docker Desktop
-docker run -d --name worker1 -e REDIS_HOST=host.docker.internal my-worker
-## En caso de utilizar Linux (o instancia de AWS)
-docker run -d --name worker1 -e REDIS_HOST=<IP-PRIVADA>
-
-# Worker 2 (opcional, para probar concurrencia)
-docker run -d --name worker2 -e REDIS_HOST=host.docker.internal my-worker
+docker compose ps
 ```
 
-Ver logs:
-```bash
-docker logs -f worker1
-docker logs -f worker2
+Debes ver:
+```
+NAME                          STATUS
+redis                         Up (healthy)
+worker-redis-image-fast-1     Up
+worker-redis-image-worker-1   Up
+worker-redis-image-worker-2   Up
+worker-redis-image-worker-3   Up
 ```
 
-## 4. Encolar imágenes de prueba a Redis
-
-Ver el directorio con imágenes:
-Si quieres cargar más imágenes esta es una muestra tomada de [Kaggle](https://www.kaggle.com/datasets/steubk/wikiart?resource=download).
-
-```bash
-ls images
+### 4. Abrir la app
+```
+http://<IP-de-tu-EC2>:8000
 ```
 
-Ejecutar el enqueuer (necesita la librería `redis` y Redis funcionando):
-
-### Opción A: Con Python local
-```bash
-export REDIS_HOST=localhost
-python enqueue_images.py images/
-```
-
-### Opción B: Con Docker (si no tienes Python local)
-```bash
-docker run --rm \
-  -e REDIS_HOST=host.docker.internal \
-  -v "$(pwd)/images:/images" \
-  -v "$(pwd)/enqueue_images.py:/enqueue_images.py" \
-  python:3.12-slim \
-  bash -c "pip install redis && python /enqueue_images.py /images"
-```
-
-## 5. Verificar que los workers procesaron las mensajes
-
-```bash
-docker logs worker1
-docker logs worker2
-```
-
-Deberías ver mensajes como:
-```
-Imagen "foto1.jpg" procesada exitosamente
-Imagen "foto2.png" procesada exitosamente
-```
-
-## 6. Detener todo
-
-```bash
-docker stop worker1 worker2 redis
-docker rm worker1 worker2 redis
-```
-
-## Otros comandos de Docker para detener y eliminar contenedores
-
-Detener y remover a un contenedore en ejecución
-
-```bash
-docker rm -f nombre_contenedor
-```
-
-Crear un contenedor efímero 
-
-```bash
-docker run --rm redis
-```
-
-Eliminar todos los contenedores
-
-```bash
-docker container prune -f
-```
-
-## Notas (Docker manual)
-
-- `host.docker.internal` permite que los contenedores se conecten a servicios en la máquina host (Redis en `localhost:6379`).
-- En Linux, si `host.docker.internal` no funciona, usa la IP de la máquina host o `--network host`.
-- El worker maneja `SIGTERM` correctamente, así que `docker stop` lo detiene limpiamente.
-
-
-
-
-
----
-
-# Parte 2: Docker Compose (automatizar)
-
-Después de entender los pasos manuales, usa Docker Compose para levantar todo con un solo comando.
-
-## 1. Lanzar todo
-
-```bash
-docker compose up -d
-```
-
-Esto levanta:
-- **Redis** en el puerto 6379
-- **2 workers** que consumen de la cola
-
-Ver logs:
+### 5. Ver logs de los workers en tiempo real
 ```bash
 docker compose logs -f worker
 ```
 
-## 2. Encolar imágenes
+## Flujo de una tarea
 
-Igual que en la Parte 1 (Opción A o B).
+1. El usuario sube una imagen desde el frontend
+2. FastAPI la guarda en `s3://tristan-web/img/` con el `process_type` como metadata
+3. Redis registra el estado como `pendiente`
+4. S3 envía un evento a SQS
+5. Uno de los 3 workers toma el mensaje de SQS
+6. El worker descarga la imagen, la procesa y sube el resultado a S3
+7. Redis actualiza el estado a `completed`
+8. El frontend recibe la actualización en tiempo real via SSE
 
-## 3. Escalar workers (opcional)
+## Estado de tareas (SSE)
 
-```bash
-docker compose up -d --scale worker=5
-```
+El frontend se conecta al endpoint `/status/stream/{filename}` usando Server-Sent Events y muestra el estado en tiempo real:
 
-## 4. Detener todo
+| Estado | Descripción |
+|---|---|
+| `pendiente` | Imagen subida, esperando worker |
+| `processing` | Worker procesando la imagen |
+| `completed` | Procesamiento completado |
+| `error` | Error durante el procesamiento |
 
-```bash
-docker compose down
-```
-
-## Notas (Docker Compose)
-
-- Los workers se conectan a Redis por el nombre de servicio (`REDIS_HOST=redis`), gracias a la red interna de Docker Compose. No hace falta `host.docker.internal`.
-- El `depends_on` con `condition: service_healthy` espera a que Redis esté listo antes de arrancar los workers.
-- El worker sigue teniendo su loop de reconexión como respaldo.
