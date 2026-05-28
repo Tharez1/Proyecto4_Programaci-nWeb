@@ -1,7 +1,7 @@
 # Equipo
- Lavenant Baldenebro Gilberto
- Montes de oca Rodriguez Tristan 
- Landon Donovan Enciso
+ * Lavenant Baldenebro Gilberto
+ * Montes de oca Rodriguez Tristan 
+ * Landon Donovan Enciso
 # Procesador de Imágenes Distribuido
 
 Aplicación web para procesar imágenes de forma distribuida usando workers en Docker, AWS SQS como cola de mensajes y Redis para el estado de las tareas.
